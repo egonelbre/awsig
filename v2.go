@@ -211,7 +211,7 @@ func (v2 *V2[T]) parseTime(headers http.Header) (string, time.Time, error) {
 				"parsing time with formats failed: %w", err,
 			)
 		}
-		return alt, parsed, nil
+		return "", parsed, nil
 	}
 	if alt != "" {
 		parsed, err := parseTimeWithFormats(alt, httpTimeFormats)

@@ -280,6 +280,15 @@ func testV4[T VerifiedRequest[exampleAuthData]](t *testing.T, newV4 func(Credent
 		assert.That(t, n == 0)
 		assert.That(t, errors.Is(err, io.EOF))
 	})
+	t.Run("presigned (within clock skew)", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404", nil)
+
+		_, err := newV4(provider, dummyNow(2013, time.May, 23, 23, 50, 0)).Verify(req, "")
+		assert.NoError(t, err)
+
+		_, err = newV4(provider, dummyNow(2013, time.May, 23, 23, 44, 0)).Verify(req, "")
+		assert.That(t, errors.Is(err, ErrRequestNotYetValid))
+	})
 	t.Run("presigned (POST)", func(t *testing.T) {
 		file := []byte("Hello World!")
 		body := bytes.NewBuffer(nil)
@@ -448,4 +457,15 @@ func testV4[T VerifiedRequest[exampleAuthData]](t *testing.T, newV4 func(Credent
 
 		assert.Equal(t, accessKeyID, vr.AuthData().accessKeyID)
 	})
+}
+
+func TestV4ParseTimeDateOffset(t *testing.T) {
+	v4 := NewV4[struct{}](nil, V4Config{})
+	h := http.Header{}
+	h.Set("Date", "Fri, 24 May 2013 01:00:00 +0200")
+
+	raw, parsed, err := v4.parseTime(h)
+	assert.NoError(t, err)
+	assert.Equal(t, "20130523T230000Z", raw)
+	assert.Equal(t, 23, parsed.Day())
 }

@@ -612,6 +612,7 @@ func (v4 *V4[T]) parseTime(headers http.Header) (string, time.Time, error) {
 				"parsing time with formats failed: %w", err,
 			)
 		}
+		parsed = parsed.UTC()
 		return parsed.Format(timeFormatISO8601), parsed, nil
 	}
 	return "", time.Time{}, ErrInvalidDateHeader // no date header at all
@@ -1103,7 +1104,7 @@ func (v4 *V4[T]) verifyPost(ctx context.Context, form PostForm) (v4VerifiedData[
 		return v4VerifiedData[T]{}, ErrInvalidPOSTDate
 	}
 
-	if v4.now().Before(parsedDateTime) {
+	if v4.now().Add(maxRequestTimeSkew).Before(parsedDateTime) {
 		return v4VerifiedData[T]{}, ErrRequestNotYetValid
 	}
 
@@ -1233,7 +1234,7 @@ func (v4 *V4[T]) verifyPresigned(r *http.Request, query url.Values) (v4VerifiedD
 		return v4VerifiedData[T]{}, ErrInvalidPresignedDate
 	}
 
-	if now := v4.now(); now.Before(parsedDateTime) {
+	if now := v4.now(); now.Add(maxRequestTimeSkew).Before(parsedDateTime) {
 		return v4VerifiedData[T]{}, ErrRequestNotYetValid
 	} else if now.After(parsedDateTime.Add(time.Duration(expires) * time.Second)) {
 		return v4VerifiedData[T]{}, ErrRequestExpired
