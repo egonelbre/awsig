@@ -74,6 +74,8 @@ type v4Reader struct {
 	integrity            expectedIntegrity
 	decodedContentLength int64
 
+	metadata               [len(chunkTrailingSignaturePrefix) + signatureV4EncodedLength]byte
+	err                    error
 	chunkCount             int
 	chunkBytesLeft         int64
 	chunkSHA256            hash.Hash
@@ -127,7 +129,7 @@ func (r *v4Reader) readChunkLength(buf []byte) (int64, error) {
 	}
 
 Loop:
-	for i := 0; i < len(chunkMaxLengthEncoded) && !separatorFound; i++ {
+	for i := 0; i <= len(chunkMaxLengthEncoded) && !separatorFound; i++ { // digits + separator
 		if _, err = io.ReadFull(r.r, buf); err != nil {
 			return 0, err
 		}
@@ -160,12 +162,12 @@ Loop:
 		return 0, ErrInvalidRequest
 	}
 
-	length, err := strconv.ParseInt(string(rawLength), 16, 64)
+	length, err := strconv.ParseUint(string(rawLength), 16, 63)
 	if err != nil {
 		return 0, ErrInvalidRequest
 	}
 
-	return length, nil
+	return int64(length), nil
 }
 
 func (r *v4Reader) readChunkSignature(prefix string, buf []byte) (signatureV4, error) {
@@ -311,7 +313,17 @@ func (r *v4Reader) close(buf []byte) error {
 		}
 	}
 
-	if err := r.consumeCRLF(buf); !errors.Is(err, io.EOF) { // TODO(amwolff): latch the error?
+	// Unsigned trailers already consume their terminating blank line.
+	if !r.trailingHeader || !r.unsigned {
+		if err := r.consumeCRLF(buf); err != nil {
+			if errors.Is(err, io.EOF) {
+				return io.ErrUnexpectedEOF
+			}
+			return err
+		}
+	}
+
+	if err := r.consumeCRLF(buf); !errors.Is(err, io.EOF) {
 		return ErrInvalidRequest
 	}
 
@@ -323,6 +335,17 @@ func (r *v4Reader) close(buf []byte) error {
 }
 
 func (r *v4Reader) Read(p []byte) (n int, err error) {
+	if r.err != nil {
+		return 0, r.err
+	}
+	if len(p) == 0 {
+		return 0, nil
+	}
+	defer func() {
+		if err != nil {
+			r.err = err
+		}
+	}()
 	if !r.multipleChunks { // fast path for single chunk
 		if n, err = r.ir.Read(p); errors.Is(err, io.EOF) {
 			if err := r.ir.verify(r.integrity); err != nil {
@@ -332,9 +355,10 @@ func (r *v4Reader) Read(p []byte) (n int, err error) {
 		return n, err
 	}
 
+	buf := r.metadata[:]
 	if r.chunkBytesLeft == 0 {
 		if r.chunkCount > 0 {
-			if err = r.consumeCRLF(p); err != nil {
+			if err = r.consumeCRLF(buf); err != nil {
 				if errors.Is(err, io.EOF) {
 					return n, io.ErrUnexpectedEOF
 				}
@@ -342,7 +366,7 @@ func (r *v4Reader) Read(p []byte) (n int, err error) {
 			}
 		}
 
-		length, signature, err := r.readChunkMeta(p)
+		length, signature, err := r.readChunkMeta(buf)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return n, io.ErrUnexpectedEOF
@@ -358,7 +382,7 @@ func (r *v4Reader) Read(p []byte) (n int, err error) {
 		}
 
 		if length == 0 { // completion chunk
-			return n, r.close(p)
+			return n, r.close(buf)
 		}
 		if length > chunkMaxLength {
 			return 0, ErrEntityTooLarge
@@ -373,6 +397,7 @@ func (r *v4Reader) Read(p []byte) (n int, err error) {
 	}
 
 	n, err = r.ir.Read(p)
+	r.decodedContentLength -= int64(n)
 
 	if r.chunkBytesLeft -= int64(n); r.chunkBytesLeft == 0 {
 		r.chunkCount++
@@ -385,7 +410,7 @@ func (r *v4Reader) Read(p []byte) (n int, err error) {
 		}
 	}
 
-	if r.decodedContentLength -= int64(n); r.decodedContentLength < 0 {
+	if r.decodedContentLength < 0 {
 		return n, ErrInvalidRequest
 	}
 
@@ -917,7 +942,7 @@ func (v4 *V4[T]) decodedContentLength(headers http.Header) (int64, error) {
 		)
 	}
 
-	decodedContentLength, err := strconv.ParseInt(rawDecodedContentLength, 10, 64)
+	decodedContentLength, err := strconv.ParseUint(rawDecodedContentLength, 10, 63)
 	if err != nil {
 		return 0, ErrInvalidXAmzDecodedContentLength
 	}
@@ -933,7 +958,7 @@ func (v4 *V4[T]) decodedContentLength(headers http.Header) (int64, error) {
 		)
 	}
 
-	return decodedContentLength, nil
+	return int64(decodedContentLength), nil
 }
 
 func (v4 *V4[T]) parseXAmzContentSHA256(rawXAmzContentSHA256 string, headers http.Header) (parsedXAmzContentSHA256, error) {
