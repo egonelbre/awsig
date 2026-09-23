@@ -75,7 +75,7 @@ func testV4[T VerifiedRequest[exampleAuthData]](t *testing.T, newV4 func(Credent
 			assert.That(t, errors.Is(err, io.EOF))
 		})
 		t.Run("PUT Object", func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPut, "https://examplebucket.s3.amazonaws.com/test$file.text", strings.NewReader(putContent))
+			req := httptest.NewRequest(http.MethodPut, "https://examplebucket.s3.amazonaws.com/test%24file.text", strings.NewReader(putContent))
 			req.Header.Add("Date", "Fri, 24 May 2013 00:00:00 GMT")
 			req.Header.Add("Authorization", "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=date;host;x-amz-content-sha256;x-amz-date;x-amz-storage-class,Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd")
 			req.Header.Add("x-amz-date", "20130524T000000Z")
@@ -234,7 +234,7 @@ func testV4[T VerifiedRequest[exampleAuthData]](t *testing.T, newV4 func(Credent
 			body.WriteString("0\r\n")
 			body.WriteString("x-amz-checksum-crc32:s3SFCQ==\n\r\n\r\n")
 
-			req := httptest.NewRequest(http.MethodPut, "https://amzn-s3-demo-bucket.s3.amazonaws.com/Key+", body)
+			req := httptest.NewRequest(http.MethodPut, "https://amzn-s3-demo-bucket.s3.amazonaws.com/Key%2B", body)
 			req.Header.Add("Content-Encoding", "aws-chunked")
 			req.Header.Add("x-amz-decoded-content-length", "17408")
 			req.Header.Add("x-amz-content-sha256", "STREAMING-UNSIGNED-PAYLOAD-TRAILER")
