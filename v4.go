@@ -1185,7 +1185,7 @@ func (v4 *V4[T]) verifyPost(ctx context.Context, form PostForm) (v4VerifiedData[
 	}, nil
 }
 
-func (v4 *V4[T]) verify(r *http.Request) (v4VerifiedData[T], error) {
+func (v4 *V4[T]) verify(r *http.Request, query url.Values) (v4VerifiedData[T], error) {
 	rawDate, parsedDateTime, err := v4.parseTime(r.Header)
 	if err != nil {
 		return v4VerifiedData[T]{}, err
@@ -1221,7 +1221,7 @@ func (v4 *V4[T]) verify(r *http.Request) (v4VerifiedData[T], error) {
 		return v4VerifiedData[T]{}, err
 	}
 
-	canonicalRequestHash := v4.canonicalRequestHash(r, r.URL.Query(), authorization.signedHeaders, rawXAmzContentSHA256)
+	canonicalRequestHash := v4.canonicalRequestHash(r, query, authorization.signedHeaders, rawXAmzContentSHA256)
 
 	signature := calculateSignatureV4(signatureV4Data{
 		algorithm:       authorization.signingAlgo,
@@ -1318,12 +1318,18 @@ func (v4 *V4[T]) verifyPresigned(r *http.Request, query url.Values) (v4VerifiedD
 //
 // See [VerifiedRequest.PostForm] for multipart POST policy validation requirements.
 func (v4 *V4[T]) Verify(r *http.Request) (*V4VerifiedRequest[T], error) {
+	query, err := parseRequestQuery(r)
+	if err != nil {
+		return nil, err
+	}
+
 	typ, params, err := mime.ParseMediaType(r.Header.Get(headerContentType))
 	if err != nil {
 		typ = ""
 	}
 
-	if r.Method == http.MethodPost && typ == "multipart/form-data" {
+	switch {
+	case r.Method == http.MethodPost && typ == "multipart/form-data":
 		file, form, err := parseMultipartFormUntilFile(r.Body, params["boundary"])
 		if err != nil {
 			return nil, nestError(ErrMalformedPOSTRequest, "parse multipart form: %w", err)
@@ -1333,13 +1339,13 @@ func (v4 *V4[T]) Verify(r *http.Request) (*V4VerifiedRequest[T], error) {
 			return nil, err
 		}
 		return newV4VerifiedRequestWithForm(file, data, form)
-	} else if r.Header.Get(headerAuthorization) != "" {
-		data, err := v4.verify(r)
+	case r.Header.Get(headerAuthorization) != "":
+		data, err := v4.verify(r, query)
 		if err != nil {
 			return nil, err
 		}
 		return newV4VerifiedRequest(r.Body, data)
-	} else if query := r.URL.Query(); query.Has(queryXAmzAlgorithm) {
+	case query.Has(queryXAmzAlgorithm):
 		data, err := v4.verifyPresigned(r, query)
 		if err != nil {
 			return nil, err

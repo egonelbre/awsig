@@ -151,7 +151,7 @@ func TestCalculateSignatureV2Subresources(t *testing.T) {
 	v2 := NewV2[struct{}](nil)
 	sign := func(target string) signatureV2 {
 		r := httptest.NewRequest(http.MethodPut, target, nil)
-		return v2.calculateSignature(r, "1", "", "key")
+		return v2.calculateSignature(r, r.URL.Query(), "1", "", "key")
 	}
 
 	base := sign("/bucket/key")
@@ -168,8 +168,11 @@ func TestCalculateSignatureV2RepeatedQueryValues(t *testing.T) {
 	v2 := NewV2[struct{}](nil)
 	r := httptest.NewRequest(http.MethodGet, "/bucket/key?acl=a&acl=b", nil)
 
+	query := r.URL.Query()
+	query.Set("unsigned-parameter", "retained")
 	expected := calculateSignatureV2("GET\n\n\n1\n/bucket/key?acl=a&acl=b", key)
-	assert.True(t, expected.compare(v2.calculateSignature(r, "1", "", key)))
+	assert.True(t, expected.compare(v2.calculateSignature(r, query, "1", "", key)))
+	assert.Equal(t, url.Values{"acl": {"a", "b"}, "unsigned-parameter": {"retained"}}, query)
 }
 
 func TestV2DecodedSubresourceValues(t *testing.T) {
@@ -181,7 +184,7 @@ func TestV2DecodedSubresourceValues(t *testing.T) {
 				// Both botocore and minio-go sign decoded query values for SigV2.
 				for _, date := range []string{"Fri, 24 May 2013 00:00:00 GMT", "2000000000"} {
 					want := calculateSignatureV2("GET\n\n\n"+date+"\n/bucket/key?"+name+"="+value, "secret")
-					got := v.calculateSignature(r, date, "", "secret")
+					got := v.calculateSignature(r, r.URL.Query(), date, "", "secret")
 					if !got.compare(want) {
 						t.Fatal("subresource value was encoded in signature input")
 					}
@@ -202,7 +205,7 @@ func TestV2CanonicalHeaderWhitespace(t *testing.T) {
 			r.Header.Add("X-Amz-Meta-Test", value)
 		}
 		want := calculateSignatureV2("GET\n\n\n1\nx-amz-meta-test:first  value,second\n/bucket/key", "secret")
-		got := v.calculateSignature(r, "1", "", "secret")
+		got := v.calculateSignature(r, r.URL.Query(), "1", "", "secret")
 		if !got.compare(want) {
 			t.Errorf("incorrect canonicalization for header values %q", values)
 		}

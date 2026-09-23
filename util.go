@@ -435,3 +435,12 @@ func parseMultipartFormUntilFile(r io.Reader, boundary string) (io.ReadCloser, P
 
 	return nil, PostForm{}, ErrMissingPOSTFile
 }
+
+// parseRequestQuery rejects partial query parses before authentication can ignore pairs.
+func parseRequestQuery(r *http.Request) (url.Values, error) {
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return nil, nestError(ErrInvalidRequest, "parse request query: %w", err)
+	}
+	return query, nil
+}

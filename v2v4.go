@@ -27,6 +27,11 @@ func NewV2V4[T any](provider CredentialsProvider[T], v4Config V4Config) *V2V4[T]
 //
 // See [VerifiedRequest.PostForm] for multipart POST policy validation requirements.
 func (v2v4 *V2V4[T]) Verify(r *http.Request, virtualHostedBucket string) (VerifiedRequest[T], error) {
+	query, err := parseRequestQuery(r)
+	if err != nil {
+		return nil, err
+	}
+
 	typ, params, err := mime.ParseMediaType(r.Header.Get(headerContentType))
 	if err != nil {
 		typ = ""
@@ -52,18 +57,18 @@ func (v2v4 *V2V4[T]) Verify(r *http.Request, virtualHostedBucket string) (Verifi
 		}
 	} else if h := r.Header.Get(headerAuthorization); h != "" {
 		if strings.HasPrefix(h, v4SigningAlgorithmPrefix) {
-			data, err := v2v4.v4.verify(r)
+			data, err := v2v4.v4.verify(r, query)
 			if err != nil {
 				return nil, err
 			}
 			return newV4VerifiedRequest(r.Body, data)
 		}
-		data, err := v2v4.v2.verify(r, virtualHostedBucket)
+		data, err := v2v4.v2.verify(r, query, virtualHostedBucket)
 		if err != nil {
 			return nil, err
 		}
 		return newV2VerifiedRequest(r.Body, data)
-	} else if query := r.URL.Query(); query.Has(queryXAmzAlgorithm) {
+	} else if query.Has(queryXAmzAlgorithm) {
 		data, err := v2v4.v4.verifyPresigned(r, query)
 		if err != nil {
 			return nil, err

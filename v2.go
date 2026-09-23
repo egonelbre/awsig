@@ -271,7 +271,7 @@ func (v2 *V2[T]) parseAuthorization(rawAuthorization string) (v2ParsedAuthorizat
 	}, nil
 }
 
-func (v2 *V2[T]) calculateSignature(r *http.Request, dateElement, virtualHostedBucket, key string) signatureV2 {
+func (v2 *V2[T]) calculateSignature(r *http.Request, query url.Values, dateElement, virtualHostedBucket, key string) signatureV2 {
 	b := newHashBuilder(func() hash.Hash { return hmac.New(sha1.New, []byte(key)) })
 
 	b.WriteString(r.Method)
@@ -321,13 +321,13 @@ func (v2 *V2[T]) calculateSignature(r *http.Request, dateElement, virtualHostedB
 		}
 	}
 
-	if query := r.URL.Query(); len(query) > 0 {
-
-		maps.DeleteFunc(query, func(p string, _ []string) bool {
-			_, ok := v2SignedSubresources[p]
-			return !ok
-		})
-		queryParams := slices.Collect(maps.Keys(query))
+	if len(query) > 0 {
+		queryParams := make([]string, 0, len(query))
+		for p := range query {
+			if _, ok := v2SignedSubresources[p]; ok {
+				queryParams = append(queryParams, p)
+			}
+		}
 		slices.Sort(queryParams)
 
 		first := true
@@ -385,7 +385,7 @@ func (v2 *V2[T]) verifyPost(ctx context.Context, form PostForm) (v2VerifiedData[
 	}, nil
 }
 
-func (v2 *V2[T]) verify(r *http.Request, virtualHostedBucket string) (v2VerifiedData[T], error) {
+func (v2 *V2[T]) verify(r *http.Request, query url.Values, virtualHostedBucket string) (v2VerifiedData[T], error) {
 	headerDateValue, parsedDateTime, err := v2.parseTime(r.Header)
 	if err != nil {
 		return v2VerifiedData[T]{}, err
@@ -408,7 +408,7 @@ func (v2 *V2[T]) verify(r *http.Request, virtualHostedBucket string) (v2Verified
 		return v2VerifiedData[T]{}, err
 	}
 
-	signature := v2.calculateSignature(r, headerDateValue, virtualHostedBucket, secretAccessKey)
+	signature := v2.calculateSignature(r, query, headerDateValue, virtualHostedBucket, secretAccessKey)
 
 	if !signature.compare(authorization.signature) {
 		return v2VerifiedData[T]{}, ErrSignatureDoesNotMatch
@@ -445,7 +445,7 @@ func (v2 *V2[T]) verifyPresigned(r *http.Request, query url.Values, virtualHoste
 		return v2VerifiedData[T]{}, err
 	}
 
-	if !v2.calculateSignature(r, rawExpires, virtualHostedBucket, secretAccessKey).compare(signature) {
+	if !v2.calculateSignature(r, query, rawExpires, virtualHostedBucket, secretAccessKey).compare(signature) {
 		return v2VerifiedData[T]{}, ErrSignatureDoesNotMatch
 	}
 
@@ -459,12 +459,18 @@ func (v2 *V2[T]) verifyPresigned(r *http.Request, query url.Values, virtualHoste
 //
 // See [VerifiedRequest.PostForm] for multipart POST policy validation requirements.
 func (v2 *V2[T]) Verify(r *http.Request, virtualHostedBucket string) (*V2VerifiedRequest[T], error) {
+	query, err := parseRequestQuery(r)
+	if err != nil {
+		return nil, err
+	}
+
 	typ, params, err := mime.ParseMediaType(r.Header.Get(headerContentType))
 	if err != nil {
 		typ = ""
 	}
 
-	if r.Method == http.MethodPost && typ == "multipart/form-data" {
+	switch {
+	case r.Method == http.MethodPost && typ == "multipart/form-data":
 		file, form, err := parseMultipartFormUntilFile(r.Body, params["boundary"])
 		if err != nil {
 			return nil, nestError(ErrMalformedPOSTRequest, "parse multipart form: %w", err)
@@ -474,13 +480,13 @@ func (v2 *V2[T]) Verify(r *http.Request, virtualHostedBucket string) (*V2Verifie
 			return nil, err
 		}
 		return newV2VerifiedRequestWithForm(file, data, form)
-	} else if r.Header.Get(headerAuthorization) != "" {
-		data, err := v2.verify(r, virtualHostedBucket)
+	case r.Header.Get(headerAuthorization) != "":
+		data, err := v2.verify(r, query, virtualHostedBucket)
 		if err != nil {
 			return nil, err
 		}
 		return newV2VerifiedRequest(r.Body, data)
-	} else if query := r.URL.Query(); query.Has(queryAWSAccessKeyId) {
+	case query.Has(queryAWSAccessKeyId):
 		data, err := v2.verifyPresigned(r, query, virtualHostedBucket)
 		if err != nil {
 			return nil, err
