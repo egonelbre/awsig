@@ -8,3 +8,6 @@
   are distinct. Clients that send `/bucket` but sign `/bucket/` must update
   their signing logic or send the trailing slash. The verifier no longer adds
   a trailing slash implicitly.
+- Duplicate session tokens are rejected with `ErrInvalidToken` before
+  credentials are requested, including header, query, and multipart POST
+  authentication.

@@ -19,6 +19,23 @@ well.
 - [ ] do shallow test runs with all publicly available AWS SDKs
     - [ ] SDKs act differently with and without TLS and with different checksum options
 
+## Session tokens
+
+Implement `CredentialsProviderWithToken` to support temporary credentials.
+`ProvideWithToken` receives the access key and the session token from the signed
+headers, presigned query, or POST form. It is also called with an empty token for
+tokenless requests, so it can reject missing tokens for temporary access keys.
+The provider must validate token binding, expiration, and session restrictions.
+Signature verification alone does not establish that a session token is valid.
+Providers implementing only `CredentialsProvider` retain tokenless support;
+requests carrying session tokens are rejected with `ErrInvalidToken`.
+
+For SigV4 presigned requests, the provider receives only the case-sensitive
+`X-Amz-Security-Token` query parameter. A token header is rejected unless it is
+signed, but even a signed token header is not used for session validation and
+may differ from the query token. Applications should use `VerifiedRequest.AuthData()`
+for the provider's validated identity, not infer it from `r.Header`.
+
 ## POST policy validation
 
 For multipart POST uploads, `Verify` authenticates the signature over the policy;
@@ -40,16 +57,21 @@ import (
 )
 
 // (1) Implement awsig.CredentialsProvider:
-type MyCredentialsProvider struct {
-	secretAccessKeys map[string]string
-}
+type (
+	MyAuthData struct {
+		AccessKeyID string
+	}
+	MyCredentialsProvider struct {
+		secretAccessKeys map[string]string
+	}
+)
 
-func (p *MyCredentialsProvider) Provide(ctx context.Context, accessKeyID string) (secretAccessKey string, _ error) {
+func (p *MyCredentialsProvider) Provide(ctx context.Context, accessKeyID string) (secretAccessKey string, _ MyAuthData, _ error) {
 	secretAccessKey, ok := p.secretAccessKeys[accessKeyID]
 	if !ok {
-		return "", awsig.ErrInvalidAccessKeyID
+		return "", MyAuthData{}, awsig.ErrInvalidAccessKeyID
 	}
-	return secretAccessKey, nil
+	return secretAccessKey, MyAuthData{AccessKeyID: accessKeyID}, nil
 }
 
 func NewMyCredentialsProvider() *MyCredentialsProvider {
