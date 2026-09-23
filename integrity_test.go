@@ -102,3 +102,52 @@ func TestChecksumMismatchError(t *testing.T) {
 		},
 	}, mismatchErr.Mismatches)
 }
+
+func TestReaderRetryAfterFailedChecksumRequest(t *testing.T) {
+	crc32Req, err := NewChecksumRequest(AlgorithmCRC32, "AAAAAA==")
+	assert.NoError(t, err)
+	sha1Req, err := NewChecksumRequest(AlgorithmSHA1, "2jmj7l5rSw0yVb/vlWAYkK/YBwk=")
+	assert.NoError(t, err)
+
+	t.Run("V2", func(t *testing.T) {
+		vr, err := newV2VerifiedRequest(strings.NewReader(""), v2VerifiedData[struct{}]{})
+		assert.NoError(t, err)
+		_, err = vr.Reader(sha1Req, sha1Req)
+		assert.Error(t, err)
+		_, err = vr.Reader(sha1Req, crc32Req)
+		assert.NoError(t, err)
+	})
+	t.Run("V4", func(t *testing.T) {
+		vr, err := newV4VerifiedRequest(strings.NewReader(""), v4VerifiedData[struct{}]{
+			options: parsedXAmzContentSHA256{unsigned: true},
+		})
+		assert.NoError(t, err)
+		_, err = vr.Reader(sha1Req, sha1Req)
+		assert.Error(t, err)
+		rd, err := vr.Reader(sha1Req, crc32Req)
+		assert.NoError(t, err)
+		_, err = io.ReadAll(rd)
+		assert.NoError(t, err)
+	})
+}
+
+func TestIntegrityReaderSharesSHA256(t *testing.T) {
+	one := testing.AllocsPerRun(10, func() { newIntegrityReader(nil, []ChecksumAlgorithm{AlgorithmSHA256}) })
+	both := testing.AllocsPerRun(10, func() {
+		newIntegrityReader(nil, []ChecksumAlgorithm{algorithmHashedPayload, AlgorithmSHA256})
+	})
+	assert.Equal(t, one, both)
+
+	ir := newIntegrityReader(strings.NewReader(data), []ChecksumAlgorithm{algorithmHashedPayload, AlgorithmSHA256})
+	_, err := io.ReadAll(ir)
+	assert.NoError(t, err)
+	assert.NoError(t, ir.verify(expectedIntegrity{AlgorithmSHA256: dataSha256, algorithmHashedPayload: dataSha256}))
+}
+
+func BenchmarkCRC64NVMEReader(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		r := newIntegrityReader(strings.NewReader(""), []ChecksumAlgorithm{AlgorithmCRC64NVME})
+		_, _ = io.Copy(io.Discard, r)
+	}
+}

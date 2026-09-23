@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // ChecksumAlgorithm represents different checksum algorithms supported
@@ -254,6 +255,10 @@ func (r *integrityReader) verify(integrity expectedIntegrity) error {
 	return errs
 }
 
+var crc64NVMETable = sync.OnceValue(func() *crc64.Table {
+	return crc64.MakeTable(0x9a6c_9329_ac4b_c9b5)
+})
+
 func newIntegrityReader(r io.Reader, algorithms []ChecksumAlgorithm) *integrityReader {
 	ir := &integrityReader{
 		hashes: make(map[ChecksumAlgorithm]hash.Hash),
@@ -276,7 +281,7 @@ func newIntegrityReader(r io.Reader, algorithms []ChecksumAlgorithm) *integrityR
 			ir.hashes[AlgorithmCRC32C] = h
 			writers = append(writers, h)
 		case AlgorithmCRC64NVME:
-			h = crc64.New(crc64.MakeTable(0x9a6c_9329_ac4b_c9b5))
+			h = crc64.New(crc64NVMETable())
 			ir.hashes[AlgorithmCRC64NVME] = h
 			writers = append(writers, h)
 		case AlgorithmSHA1:
@@ -284,6 +289,9 @@ func newIntegrityReader(r io.Reader, algorithms []ChecksumAlgorithm) *integrityR
 			ir.hashes[AlgorithmSHA1] = h
 			writers = append(writers, h)
 		case AlgorithmSHA256, algorithmHashedPayload:
+			if _, ok := ir.hashes[AlgorithmSHA256]; ok {
+				continue
+			}
 			h = sha256.New()
 			ir.hashes[AlgorithmSHA256] = h
 			ir.hashes[algorithmHashedPayload] = h

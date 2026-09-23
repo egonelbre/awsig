@@ -538,15 +538,21 @@ func (vr *V4VerifiedRequest[T]) Reader(reqs ...ChecksumRequest) (Reader, error) 
 		return vr.wrapped, nil
 	}
 
+	if vr.data.options.invalid {
+		return invalidContentSHA256Reader{}, nil
+	}
+
+	algorithms, trailingSumAlgo, integrity := vr.algorithms, vr.trailingSumAlgo, maps.Clone(vr.integrity)
+	restore := func() {
+		vr.algorithms, vr.trailingSumAlgo, vr.integrity = algorithms, trailingSumAlgo, integrity
+	}
 	if err := vr.requestChecksums(reqs); err != nil {
+		restore()
 		return nil, err
 	}
 	if vr.data.options.trailer && vr.trailingSumAlgo == nil {
+		restore()
 		return nil, errors.New("the trailing checksum algorithm must be specified when the request contains a trailing header")
-	}
-
-	if vr.data.options.invalid {
-		return invalidContentSHA256Reader{}, nil
 	}
 
 	var (

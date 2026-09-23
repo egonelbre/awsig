@@ -166,7 +166,9 @@ func (vr *V2VerifiedRequest[T]) Reader(reqs ...ChecksumRequest) (Reader, error) 
 		return vr.wrapped, nil
 	}
 
+	algorithms, integrity := vr.algorithms, maps.Clone(vr.integrity)
 	if err := vr.requestChecksums(reqs); err != nil {
+		vr.algorithms, vr.integrity = algorithms, integrity
 		return nil, err
 	}
 
