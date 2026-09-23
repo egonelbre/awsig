@@ -105,7 +105,8 @@ var httpTimeFormats = []string{
 	time.ANSIC,
 }
 
-var errMessageTooLarge = errors.New("message too large")
+// ErrMessageTooLarge indicates that multipart form metadata exceeds the 20 KB limit.
+var ErrMessageTooLarge = errors.New("message too large")
 
 // CredentialsProvider is the interface that all users of this package
 // must implement. Provide is called by signature verifiers. If the
@@ -235,6 +236,11 @@ type (
 		AuthData() T
 		// PostForm returns the parsed multipart form data if the
 		// request is a POST with "multipart/form-data" Content-Type.
+		// Only the policy signature has been verified. Before accepting an upload,
+		// callers must decode and validate its policy expiration and every condition
+		// (including bucket, key, ACL, form fields, and content-length-range).
+		// Reader does not enforce the policy or its upload size limits.
+		// Signature verification does not establish permission to perform an operation.
 		PostForm() PostForm
 		// Reader returns a Reader to read the body of the verified
 		// request. Reader can be called multiple times, but only the
@@ -389,7 +395,7 @@ func parseMultipartFormUntilFile(r io.Reader, boundary string) (io.ReadCloser, P
 		part, err := mr.NextPart()
 		if err != nil {
 			if errors.Is(err, errLimitReached) {
-				err = errMessageTooLarge
+				err = ErrMessageTooLarge
 			} else if errors.Is(err, io.EOF) {
 				break
 			}
@@ -398,7 +404,7 @@ func parseMultipartFormUntilFile(r io.Reader, boundary string) (io.ReadCloser, P
 
 		name := part.FormName()
 
-		if name == "file" {
+		if strings.EqualFold(name, "file") {
 			lr.toggle() // stop limiting the reader as we reached the file part
 			form.Set(name, PostFormElement{
 				Headers: part.Header,
@@ -410,7 +416,7 @@ func parseMultipartFormUntilFile(r io.Reader, boundary string) (io.ReadCloser, P
 		b, err := io.ReadAll(part)
 		if err != nil {
 			if errors.Is(err, errLimitReached) {
-				err = errMessageTooLarge
+				err = ErrMessageTooLarge
 			}
 			if errClose := part.Close(); errClose != nil {
 				err = errors.Join(err, errClose)

@@ -482,7 +482,7 @@ func (vr *V4VerifiedRequest[T]) AuthData() T {
 	return vr.data.authData
 }
 
-// PostForm implements VerifiedRequest.
+// PostForm implements [VerifiedRequest.PostForm].
 func (vr *V4VerifiedRequest[T]) PostForm() PostForm {
 	return vr.form
 }
@@ -1315,6 +1315,8 @@ func (v4 *V4[T]) verifyPresigned(r *http.Request, query url.Values) (v4VerifiedD
 
 // Verify verifies the AWS Signature Version 4 for the given request and
 // returns a verified request.
+//
+// See [VerifiedRequest.PostForm] for multipart POST policy validation requirements.
 func (v4 *V4[T]) Verify(r *http.Request) (*V4VerifiedRequest[T], error) {
 	typ, params, err := mime.ParseMediaType(r.Header.Get(headerContentType))
 	if err != nil {
@@ -1324,7 +1326,7 @@ func (v4 *V4[T]) Verify(r *http.Request) (*V4VerifiedRequest[T], error) {
 	if r.Method == http.MethodPost && typ == "multipart/form-data" {
 		file, form, err := parseMultipartFormUntilFile(r.Body, params["boundary"])
 		if err != nil {
-			return nil, ErrMalformedPOSTRequest
+			return nil, nestError(ErrMalformedPOSTRequest, "parse multipart form: %w", err)
 		}
 		data, err := v4.verifyPost(r.Context(), form)
 		if err != nil {

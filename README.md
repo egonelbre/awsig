@@ -19,6 +19,16 @@ well.
 - [ ] do shallow test runs with all publicly available AWS SDKs
     - [ ] SDKs act differently with and without TLS and with different checksum options
 
+## POST policy validation
+
+For multipart POST uploads, `Verify` authenticates the signature over the policy;
+it does **not** enforce policy expiration or conditions. Before accepting an upload,
+the application must decode and validate the policy, including its expiration,
+bucket, key/prefix, ACL, form fields, and content-length-range. This applies to both
+SigV2 and SigV4. The SigV4 form-date check does not replace policy expiration checks,
+and `Reader` does not enforce policy size limits. A `VerifiedRequest` is not an
+authorization decision.
+
 ## example usage
 
 ```go
@@ -65,6 +75,8 @@ func …(w http.ResponseWriter, r *http.Request) {
 	}
 	// (4) If the request is a multipart/form-data POST, you can access the parsed form values:
 	form := vr.PostForm()
+	// For POST uploads, validate the policy expiration and all conditions
+	// against this form, the target bucket, and the file before accepting it.
 	//
 	// Important: if you intend to read the body, use vr.Reader() instead of r.Body.
 	//

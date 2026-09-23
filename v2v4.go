@@ -24,6 +24,8 @@ func NewV2V4[T any](provider CredentialsProvider[T], v4Config V4Config) *V2V4[T]
 // Verify automatically detects and verifies either AWS Signature
 // Version 2 or AWS Signature Version 4 for the given request and
 // returns a verified request.
+//
+// See [VerifiedRequest.PostForm] for multipart POST policy validation requirements.
 func (v2v4 *V2V4[T]) Verify(r *http.Request, virtualHostedBucket string) (VerifiedRequest[T], error) {
 	typ, params, err := mime.ParseMediaType(r.Header.Get(headerContentType))
 	if err != nil {
@@ -33,7 +35,7 @@ func (v2v4 *V2V4[T]) Verify(r *http.Request, virtualHostedBucket string) (Verifi
 	if r.Method == http.MethodPost && typ == "multipart/form-data" {
 		file, form, err := parseMultipartFormUntilFile(r.Body, params["boundary"])
 		if err != nil {
-			return nil, ErrMalformedPOSTRequest
+			return nil, nestError(ErrMalformedPOSTRequest, "parse multipart form: %w", err)
 		}
 		if form.Has(queryXAmzAlgorithm) {
 			data, err := v2v4.v4.verifyPost(r.Context(), form)

@@ -121,7 +121,7 @@ func (vr *V2VerifiedRequest[T]) AuthData() T {
 	return vr.data.authData
 }
 
-// PostForm implements VerifiedRequest.
+// PostForm implements [VerifiedRequest.PostForm].
 func (vr *V2VerifiedRequest[T]) PostForm() PostForm {
 	return vr.form
 }
@@ -456,6 +456,8 @@ func (v2 *V2[T]) verifyPresigned(r *http.Request, query url.Values, virtualHoste
 
 // Verify verifies the AWS Signature Version 2 for the given request and
 // returns a verified request.
+//
+// See [VerifiedRequest.PostForm] for multipart POST policy validation requirements.
 func (v2 *V2[T]) Verify(r *http.Request, virtualHostedBucket string) (*V2VerifiedRequest[T], error) {
 	typ, params, err := mime.ParseMediaType(r.Header.Get(headerContentType))
 	if err != nil {
@@ -465,7 +467,7 @@ func (v2 *V2[T]) Verify(r *http.Request, virtualHostedBucket string) (*V2Verifie
 	if r.Method == http.MethodPost && typ == "multipart/form-data" {
 		file, form, err := parseMultipartFormUntilFile(r.Body, params["boundary"])
 		if err != nil {
-			return nil, ErrMalformedPOSTRequest
+			return nil, nestError(ErrMalformedPOSTRequest, "parse multipart form: %w", err)
 		}
 		data, err := v2.verifyPost(r.Context(), form)
 		if err != nil {
