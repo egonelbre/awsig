@@ -24,6 +24,50 @@ const (
 	querySignature      = "Signature"
 )
 
+// v2SignedSubresources is the read-only set of query fields included in SigV2 signatures.
+var v2SignedSubresources = map[string]struct{}{
+	"accelerate":                   {},
+	"acl":                          {},
+	"analytics":                    {},
+	"cors":                         {},
+	"delete":                       {},
+	"encryption":                   {},
+	"intelligent-tiering":          {},
+	"inventory":                    {},
+	"legal-hold":                   {},
+	"lifecycle":                    {},
+	"location":                     {},
+	"logging":                      {},
+	"metrics":                      {},
+	"notification":                 {},
+	"object-lock":                  {},
+	"ownershipControls":            {},
+	"partNumber":                   {},
+	"policy":                       {},
+	"policyStatus":                 {},
+	"publicAccessBlock":            {},
+	"replication":                  {},
+	"requestPayment":               {},
+	"restore":                      {},
+	"retention":                    {},
+	"select":                       {},
+	"select-type":                  {},
+	"tagging":                      {},
+	"torrent":                      {},
+	"uploadId":                     {},
+	"uploads":                      {},
+	"versionId":                    {},
+	"versioning":                   {},
+	"versions":                     {},
+	"website":                      {},
+	"response-content-type":        {},
+	"response-content-language":    {},
+	"response-expires":             {},
+	"response-cache-control":       {},
+	"response-content-disposition": {},
+	"response-content-encoding":    {},
+}
+
 type v2Reader struct {
 	ir        *integrityReader
 	integrity expectedIntegrity
@@ -251,7 +295,8 @@ func (v2 *V2[T]) calculateSignature(r *http.Request, dateElement, virtualHostedB
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			b.WriteString(v)
+			// net/http unfolds HTTP headers; trim each value before joining.
+			b.WriteString(strings.TrimSpace(v))
 		}
 		b.WriteByte(lf)
 	}
@@ -265,63 +310,38 @@ func (v2 *V2[T]) calculateSignature(r *http.Request, dateElement, virtualHostedB
 	// might use long after we've authenticated this request.
 	b.WriteString(r.URL.EscapedPath())
 	if virtualHostedBucket == "" {
-		r := strings.TrimPrefix(r.URL.Path, "/")
-		if r != "" && strings.IndexByte(r, '/') < 0 {
-			// For some reason, they sometimes sign requests that
-			// contain just the bucket name with a trailing slash.
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path != "" && !strings.Contains(path, "/") {
+			// Preserve compatibility with clients that send /bucket but sign
+			// /bucket/. Only path-style bucket-only requests get this suffix;
+			// object paths and virtual-hosted requests must remain unchanged.
 			b.WriteByte('/')
 		}
 	}
 
 	if query := r.URL.Query(); len(query) > 0 {
-		included := map[string]bool{
-			"acl":                          true,
-			"lifecycle":                    true,
-			"location":                     true,
-			"logging":                      true,
-			"notification":                 true,
-			"partNumber":                   true,
-			"policy":                       true,
-			"requestPayment":               true,
-			"uploadId":                     true,
-			"uploads":                      true,
-			"versionId":                    true,
-			"versioning":                   true,
-			"versions":                     true,
-			"website":                      true,
-			"response-content-type":        false,
-			"response-content-language":    false,
-			"response-expires":             false,
-			"response-cache-control":       false,
-			"response-content-disposition": false,
-			"response-content-encoding":    false,
-			"delete":                       true,
-		}
 
 		maps.DeleteFunc(query, func(p string, _ []string) bool {
-			_, ok := included[p]
+			_, ok := v2SignedSubresources[p]
 			return !ok
 		})
 		queryParams := slices.Collect(maps.Keys(query))
 		slices.Sort(queryParams)
 
-		for i, p := range queryParams {
-			if i == 0 {
-				b.WriteByte('?')
-			}
-
+		first := true
+		for _, p := range queryParams {
 			for _, v := range query[p] {
-				if i > 0 {
+				if first {
+					b.WriteByte('?')
+				} else {
 					b.WriteByte('&')
 				}
+				first = false
 				b.WriteString(p)
 				if v != "" {
 					b.WriteByte('=')
-					if included[p] {
-						b.WriteString(uriEncode(v, false))
-					} else {
-						b.WriteString(v)
-					}
+					// SigV2 signers use decoded subresource and response-header values.
+					b.WriteString(v)
 				}
 			}
 		}
