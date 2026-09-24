@@ -20,16 +20,39 @@ not normalized.
 - [ ] do shallow test runs with all publicly available AWS SDKs
     - [ ] SDKs act differently with and without TLS and with different checksum options
 
+## SigV2 compatibility
+
+The signed subresource list matches `HmacV1Auth.QSAOfInterest` from
+[botocore 1.40.0](https://github.com/boto/botocore/blob/1.40.0/botocore/auth.py#L795-L834),
+including `storageClass` and `defaultObjectAcl`. The verifier uses this single
+list; it does not retry with another client's canonicalization rules.
+
+SigV2 requests containing `encryption`, `legal-hold`, `retention`,
+`intelligent-tiering`, `ownershipControls`, `policyStatus`, or `publicAccessBlock`
+are rejected with `ErrInvalidRequest` and must use SigV4. Botocore's SigV2 list
+does not sign these operation selectors. Applications adding other operation
+selectors absent from the list must also require SigV4 for those operations.
+
+Presigned SigV2 supports query-transported `x-amz-*`, `content-type`, and
+`content-md5` headers, matching botocore's `HmacV1QueryAuth`. These values are
+verified without changing `r.Header`; applications must consume the values from
+the query, including requesting body checksum verification for `content-md5`.
+Conflicting query and header values are rejected.
+
 ## Session tokens
 
 Implement `CredentialsProviderWithToken` to support temporary credentials.
 `ProvideWithToken` receives the access key and the session token from the signed
 headers, presigned query, or POST form. It is also called with an empty token for
-tokenless requests, so it can reject missing tokens for temporary access keys.
+tokenless requests. It must reject an empty token for temporary access keys.
 The provider must validate token binding, expiration, and session restrictions.
 Signature verification alone does not establish that a session token is valid.
 Providers implementing only `CredentialsProvider` retain tokenless support;
 requests carrying session tokens are rejected with `ErrInvalidToken`.
+
+Header-authenticated SigV4 reads the token only from the
+`X-Amz-Security-Token` header. A query parameter does not supply a session token
+for this authentication mode.
 
 For SigV4 presigned requests, the provider receives only the case-sensitive
 `X-Amz-Security-Token` query parameter. A token header is rejected unless it is
