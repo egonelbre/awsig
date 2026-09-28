@@ -64,6 +64,16 @@
   `AlgorithmXXHASH3`, and `AlgorithmXXHASH128` are verified in headers and
   trailers. XXHASH digests are big-endian. The module now depends on
   `github.com/cespare/xxhash/v2` and `github.com/zeebo/xxh3`.
+- Non-final SigV4 streaming chunks must be at least 8192 bytes (previously
+  8000). Smaller chunks fail with the new `ErrInvalidChunkSize`, which also
+  matches `ErrEntityTooSmall`.
+- SigV4 requests with an unsigned `x-amz-*` or Content-MD5 header fail with the
+  new `ErrUnsignedHeader` instead of `ErrMissingSecurityHeader`; AWS reports
+  this as AccessDenied.
+- Malformed `X-Amz-Credential` and `X-Amz-SignedHeaders` query parameters in
+  presigned SigV4 requests fail with the new
+  `ErrAuthorizationQueryParametersError` instead of
+  `ErrAuthorizationHeaderMalformed`.
 
 ### Test server
 
@@ -76,3 +86,6 @@
   `InvalidRequest`, respectively. Oversized multipart metadata returns HTTP 400
   with `MaxPostPreDataLengthExceededError` instead of `InternalError`.
 - Malformed checksum trailers return HTTP 400 with `MalformedTrailerError`.
+- Unsigned headers return HTTP 403 with `AccessDenied`. Undersized chunks and
+  malformed presigned query parameters return HTTP 400 with
+  `InvalidChunkSizeError` and `AuthorizationQueryParametersError`.

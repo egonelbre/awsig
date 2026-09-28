@@ -250,8 +250,8 @@ func TestV4RejectsUnsignedTokenHeader(t *testing.T) {
 				} else {
 					_, err = v.v4.Verify(r)
 				}
-				if !errors.Is(err, ErrMissingSecurityHeader) {
-					t.Fatalf("got %v, want ErrMissingSecurityHeader", err)
+				if !errors.Is(err, ErrUnsignedHeader) {
+					t.Fatalf("got %v, want ErrUnsignedHeader", err)
 				}
 				if p.calls != 0 {
 					t.Fatalf("unsigned token reached provider: %d calls", p.calls)
