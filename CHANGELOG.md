@@ -35,7 +35,8 @@
   name is now matched case-insensitively.
 - Malformed query strings fail with `ErrInvalidRequest` before authentication or
   multipart parsing in all public verifiers, rather than authenticating a
-  partially parsed query.
+  partially parsed query. As in S3, query pairs are split only on `&`; a raw
+  `;` is part of the key or value and is signed as `%3B`.
 - Temporary credentials can be validated through `CredentialsProviderWithToken`.
   Providers implementing only `CredentialsProvider` reject requests carrying an
   authentication token with `ErrInvalidToken`. SigV4 presigned token query keys

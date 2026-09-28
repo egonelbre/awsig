@@ -486,8 +486,9 @@ func parseMultipartFormUntilFile(r io.Reader, boundary string) (io.ReadCloser, P
 }
 
 // parseRequestQuery rejects partial query parses before authentication can ignore pairs.
+// Like S3, it splits pairs only on '&' and treats ';' as part of a key or value.
 func parseRequestQuery(r *http.Request) (url.Values, error) {
-	query, err := url.ParseQuery(r.URL.RawQuery)
+	query, err := url.ParseQuery(strings.ReplaceAll(r.URL.RawQuery, ";", "%3B"))
 	if err != nil {
 		return nil, nestError(ErrInvalidRequest, "parse request query: %w", err)
 	}
