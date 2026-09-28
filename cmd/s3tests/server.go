@@ -685,7 +685,9 @@ func awsigErrorToHTTPError(ctx context.Context, log *slog.Logger, w http.Respons
 	switch {
 	case errors.Is(err, awsig.ErrInvalidToken):
 		xmlHTTPError(ctx, log, w, http.StatusBadRequest, "InvalidToken", "The provided token is malformed or otherwise invalid.")
-	case errors.Is(err, awsig.ErrInvalidRequest):
+	case errors.Is(err, awsig.ErrMalformedTrailer):
+		xmlHTTPError(ctx, log, w, http.StatusBadRequest, "MalformedTrailerError", "The request contained trailing data that was not well-formed or did not conform to our published schema.")
+	case errors.Is(err, awsig.ErrInvalidRequest), errors.Is(err, awsig.ErrInvalidChecksumRequest):
 		xmlHTTPError(ctx, log, w, http.StatusBadRequest, "InvalidRequest", "The request is invalid.")
 	case errors.Is(err, awsig.ErrMessageTooLarge):
 		xmlHTTPError(ctx, log, w, http.StatusBadRequest, "MaxPostPreDataLengthExceededError", "Your POST request fields preceding the upload file were too large.")
